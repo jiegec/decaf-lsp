@@ -23,49 +23,66 @@ struct Backend {
 }
 
 impl Backend {
-    fn update(&self, uri: Url, content: &str) {
-        if let Ok(program) = syntax::parser::work(content, &syntax::ASTAlloc::default()) {
-            let mut symbols = Vec::new();
-            for class in program.class.iter() {
-                symbols.push(SymbolInformation {
-                    name: class.name.to_string(),
-                    kind: SymbolKind::Class,
-                    deprecated: None,
-                    location: Location {
-                        uri: uri.clone(),
-                        range: range2(&class.loc, &class.end),
-                    },
-                    container_name: None,
-                });
+    fn update(&self, printer: &Printer, uri: Url, content: &str) {
+        // symbols
+        match syntax::parser::work(content, &syntax::ASTAlloc::default()) {
+            Ok(program) => {
+                let mut symbols = Vec::new();
+                for class in program.class.iter() {
+                    symbols.push(SymbolInformation {
+                        name: class.name.to_string(),
+                        kind: SymbolKind::Class,
+                        deprecated: None,
+                        location: Location {
+                            uri: uri.clone(),
+                            range: range2(&class.loc, &class.end),
+                        },
+                        container_name: None,
+                    });
 
-                for field in class.field.iter() {
-                    match field {
-                        syntax::FieldDef::FuncDef(func) => symbols.push(SymbolInformation {
-                            name: func.name.to_string(),
-                            kind: SymbolKind::Method,
-                            deprecated: None,
-                            location: Location {
-                                uri: uri.clone(),
-                                range: range(&func.loc),
-                            },
-                            container_name: Some(class.name.to_string()),
-                        }),
-                        syntax::FieldDef::VarDef(var) => symbols.push(SymbolInformation {
-                            name: var.name.to_string(),
-                            kind: SymbolKind::Field,
-                            deprecated: None,
-                            location: Location {
-                                uri: uri.clone(),
-                                range: range(&var.loc),
-                            },
-                            container_name: Some(class.name.to_string()),
-                        }),
-                        _ => {}
+                    for field in class.field.iter() {
+                        match field {
+                            syntax::FieldDef::FuncDef(func) => symbols.push(SymbolInformation {
+                                name: func.name.to_string(),
+                                kind: SymbolKind::Method,
+                                deprecated: None,
+                                location: Location {
+                                    uri: uri.clone(),
+                                    range: range(&func.loc),
+                                },
+                                container_name: Some(class.name.to_string()),
+                            }),
+                            syntax::FieldDef::VarDef(var) => symbols.push(SymbolInformation {
+                                name: var.name.to_string(),
+                                kind: SymbolKind::Field,
+                                deprecated: None,
+                                location: Location {
+                                    uri: uri.clone(),
+                                    range: range(&var.loc),
+                                },
+                                container_name: Some(class.name.to_string()),
+                            }),
+                        }
                     }
                 }
+                let mut state = self.state.lock().unwrap();
+                state.symbols = symbols;
+                printer.publish_diagnostics(uri, vec![]);
             }
-            let mut state = self.state.lock().unwrap();
-            state.symbols = symbols;
+            Err(errors) => {
+                let mut diag = Vec::new();
+                for err in errors.0.iter() {
+                    diag.push(Diagnostic {
+                        range: range(&err.0),
+                        severity: None,
+                        code: None,
+                        source: None,
+                        message: format!("{:?}", err.1),
+                        related_information: None,
+                    });
+                }
+                printer.publish_diagnostics(uri, diag);
+            }
         }
     }
 }
@@ -106,8 +123,7 @@ impl LanguageServer for Backend {
         Box::new(future::ok(None))
     }
 
-    fn hover(&self, param: TextDocumentPositionParams) -> Self::HoverFuture {
-        debug!("hover {:?}", param);
+    fn hover(&self, _param: TextDocumentPositionParams) -> Self::HoverFuture {
         Box::new(future::ok(None))
     }
 
@@ -115,18 +131,18 @@ impl LanguageServer for Backend {
         Box::new(future::ok(None))
     }
 
-    fn did_open(&self, _: &Printer, params: DidOpenTextDocumentParams) {
+    fn did_open(&self, printer: &Printer, params: DidOpenTextDocumentParams) {
         let uri = params.text_document.uri;
         if let Ok(path) = uri.to_file_path() {
             if let Ok(content) = fs::read_to_string(path) {
-                self.update(uri, &content);
+                self.update(printer, uri, &content);
             }
         }
     }
 
-    fn did_change(&self, _: &Printer, params: DidChangeTextDocumentParams) {
+    fn did_change(&self, printer: &Printer, params: DidChangeTextDocumentParams) {
         let uri = params.text_document.uri;
-        self.update(uri, &params.content_changes[0].text);
+        self.update(printer, uri, &params.content_changes[0].text);
     }
 }
 
