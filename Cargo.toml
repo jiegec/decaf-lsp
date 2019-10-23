@@ -1,0 +1,20 @@
+[package]
+name = "decaf-lsp"
+version = "0.1.0"
+authors = ["Jiajie Chen <noc@jiegec.ac.cn>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+codespan = "0.5.0"
+codespan-lsp = "0.5.0"
+tower-lsp = "0.4.0"
+jsonrpc-core = "13.1"
+tokio = "0.1.22"
+futures = "0.1.29"
+serde_json = "1.0.41"
+simple-logging = "2.0.2"
+log = "0.4.8"
+syntax = { git = "https://github.com/jiegec/decaf-rs", branch = "dev" }
+common = { git = "https://github.com/jiegec/decaf-rs", branch = "dev" }
