@@ -18,3 +18,4 @@ simple-logging = "2.0.2"
 log = "0.4.8"
 syntax = { git = "https://github.com/jiegec/decaf-rs", branch = "dev" }
 common = { git = "https://github.com/jiegec/decaf-rs", branch = "dev" }
+typeck = { git = "https://github.com/jiegec/decaf-rs", branch = "dev" }

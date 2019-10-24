@@ -150,6 +150,7 @@ dependencies = [
  "syntax 0.1.0 (git+https://github.com/jiegec/decaf-rs?branch=dev)",
  "tokio 0.1.22 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-lsp 0.4.0 (git+https://github.com/jiegec/tower-lsp.git)",
+ "typeck 0.1.0 (git+https://github.com/jiegec/decaf-rs?branch=dev)",
 ]
 
 [[package]]
@@ -930,6 +931,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "typeck"
+version = "0.1.0"
+source = "git+https://github.com/jiegec/decaf-rs?branch=dev#27c19c3615a5fff1c504b31ef556f9366e4f37b4"
+dependencies = [
+ "common 0.1.0 (git+https://github.com/jiegec/decaf-rs?branch=dev)",
+ "syntax 0.1.0 (git+https://github.com/jiegec/decaf-rs?branch=dev)",
+ "typed-arena 1.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "typed-arena"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1141,6 +1152,7 @@ dependencies = [
 "checksum toml 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)" = "c7aabe75941d914b72bf3e5d3932ed92ce0664d49d8432305a8b547c37227724"
 "checksum tower-lsp 0.4.0 (git+https://github.com/jiegec/tower-lsp.git)" = "<none>"
 "checksum tower-service 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "2cc0c98637d23732f8de6dfd16494c9f1559c3b9e20b4a46462c8f9b9e827bfa"
+"checksum typeck 0.1.0 (git+https://github.com/jiegec/decaf-rs?branch=dev)" = "<none>"
 "checksum typed-arena 1.6.1 (registry+https://github.com/rust-lang/crates.io-index)" = "9c0704a799d314795d3d847d519b284bae681ef9b1f3da99f7ebc7b47ba2e607"
 "checksum unicode-bidi 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)" = "49f2bd0c6468a8230e1db229cff8029217cf623c767ea5d60bfbd42729ea54d5"
 "checksum unicode-normalization 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)" = "141339a08b982d942be2ca06ff8b076563cbe223d1befd5450716790d44e2426"

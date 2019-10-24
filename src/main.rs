@@ -9,6 +9,7 @@ use std::fs;
 use std::sync::Arc;
 use std::sync::Mutex;
 use syntax;
+use typeck;
 use tokio;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{LanguageServer, LspService, Printer, Server};
@@ -77,6 +78,7 @@ impl Backend {
         // symbols
         match syntax::parser::work(content, &syntax::ASTAlloc::default()) {
             Ok(program) => {
+                // symbols
                 let mut symbols = Vec::new();
                 for class in program.class.iter() {
                     symbols.push(SymbolInformation {
@@ -118,7 +120,30 @@ impl Backend {
                 symbols.reverse();
                 let mut state = self.state.lock().unwrap();
                 state.get_file(&uri).symbols = symbols;
-                printer.publish_diagnostics(uri, vec![]);
+                drop(state);
+
+                let mut diag = vec![];
+
+                // hover
+                match typeck::work(program, &typeck::TypeCkAlloc::default()) {
+                    Ok(_) => {
+
+                    }
+                    Err(errors) => {
+                        for err in errors.0.iter() {
+                            diag.push(Diagnostic {
+                                range: range(&err.0),
+                                severity: None,
+                                code: None,
+                                source: None,
+                                message: format!("{:?}", err.1),
+                                related_information: None,
+                            });
+                        }
+                    }
+                }
+
+                printer.publish_diagnostics(uri, diag);
             }
             Err(errors) => {
                 let mut diag = Vec::new();

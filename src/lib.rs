@@ -3,9 +3,16 @@ use syntax;
 use tower_lsp::lsp_types::*;
 
 pub fn pos(loc: &common::Loc) -> Position {
-    Position {
-        line: loc.0 as u64 - 1,
-        character: loc.1 as u64 - 1,
+    if loc.0 == 0 || loc.1 == 0 {
+        Position {
+            line: 0,
+            character: 0,
+        }
+    } else {
+        Position {
+            line: loc.0 as u64 - 1,
+            character: loc.1 as u64 - 1,
+        }
     }
 }
 
