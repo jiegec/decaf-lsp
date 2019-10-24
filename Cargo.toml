@@ -9,8 +9,8 @@ edition = "2018"
 [dependencies]
 codespan = "0.5.0"
 codespan-lsp = "0.5.0"
-tower-lsp = "0.4.0"
-jsonrpc-core = "13.1"
+tower-lsp = { git = "https://github.com/jiegec/tower-lsp.git" }
+jsonrpc-core = "14.0"
 tokio = "0.1.22"
 futures = "0.1.29"
 serde_json = "1.0.41"

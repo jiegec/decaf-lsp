@@ -109,6 +109,7 @@ impl LanguageServer for Backend {
     type CompletionFuture = BoxFuture<Option<CompletionResponse>>;
     type HoverFuture = BoxFuture<Option<Hover>>;
     type HighlightFuture = BoxFuture<Option<Vec<DocumentHighlight>>>;
+    type DocumentSymbolFuture = BoxFuture<Option<DocumentSymbolResponse>>;
 
     fn initialize(&self, _: &Printer, _: InitializeParams) -> Result<InitializeResult> {
         Ok(InitializeResult {
@@ -117,6 +118,7 @@ impl LanguageServer for Backend {
                     TextDocumentSyncKind::Full,
                 )),
                 workspace_symbol_provider: Some(true),
+                document_symbol_provider: Some(true),
                 ..ServerCapabilities::default()
             },
         })
@@ -155,6 +157,15 @@ impl LanguageServer for Backend {
     fn document_highlight(&self, _: TextDocumentPositionParams) -> Self::HighlightFuture {
         debug!("highlight");
         Box::new(future::ok(None))
+    }
+
+    fn document_symbol(&self, params: DocumentSymbolParams) -> Self::DocumentSymbolFuture {
+        debug!("documentSymbol");
+        let mut state = self.state.lock().unwrap();
+        let file = state.get_file(&params.text_document.uri);
+        Box::new(future::ok(Some(DocumentSymbolResponse::Flat(
+            file.symbols.clone(),
+        ))))
     }
 
     fn did_open(&self, printer: &Printer, params: DidOpenTextDocumentParams) {
