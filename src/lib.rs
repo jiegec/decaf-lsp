@@ -31,7 +31,7 @@ pub fn token(token: &syntax::parser::Token) -> Range {
         },
         end: Position {
             line: token.line as u64 - 1,
-            character: (token.col as u64 + token.piece.len() as u64) - 1,
+            character: (token.col as u64 + token.piece.len() as u64) - 1 - 1,
         },
     }
 }

@@ -44,16 +44,27 @@ impl Backend {
         let mut tokens = syntax::parser::Lexer::new(content.as_bytes());
         let mut hovers = Vec::new();
         loop {
+            use syntax::parser::TokenKind::*;
             let tok = tokens.next();
-            if tok.ty == syntax::parser::TokenKind::_Eof {
+            if tok.ty == _Eof {
                 break;
             }
+
+            if tok.ty == Id {
+                continue;
+            }
+
             let range = token(&tok);
             hovers.push((
                 range,
                 Hover {
                     contents: HoverContents::Scalar(MarkedString::from_markdown(
-                        format!("{:?}", tok.ty)
+                        match tok.ty {
+                            IntLit => format!("Integer Literal"),
+                            StringLit => format!("String Literal"),
+                            UntermString => format!("Unterminated String Literal"),
+                            _ => format!("{:?}", tok.ty)
+                        }
                     )),
                     range: None,
                 },
@@ -104,6 +115,7 @@ impl Backend {
                         }
                     }
                 }
+                symbols.reverse();
                 let mut state = self.state.lock().unwrap();
                 state.get_file(&uri).symbols = symbols;
                 printer.publish_diagnostics(uri, vec![]);
