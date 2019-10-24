@@ -3,6 +3,7 @@ use futures::future;
 use jsonrpc_core::{BoxFuture, Result};
 use log::*;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -13,7 +14,11 @@ use tower_lsp::{LanguageServer, LspService, Printer, Server};
 
 #[derive(Debug, Default)]
 struct State {
-    source: String,
+    files: HashMap<Url, FileState>,
+}
+
+#[derive(Debug, Default)]
+struct FileState {
     symbols: Vec<SymbolInformation>,
 }
 
@@ -66,7 +71,9 @@ impl Backend {
                     }
                 }
                 let mut state = self.state.lock().unwrap();
-                state.symbols = symbols;
+                if let Some(state) = state.files.get_mut(&uri) {
+                    state.symbols = symbols;
+                }
                 printer.publish_diagnostics(uri, vec![]);
             }
             Err(errors) => {
@@ -108,30 +115,42 @@ impl LanguageServer for Backend {
     }
 
     fn shutdown(&self) -> Self::ShutdownFuture {
+        debug!("shutdown");
         Box::new(future::ok(()))
     }
 
     fn symbol(&self, _: WorkspaceSymbolParams) -> Self::SymbolFuture {
-        Box::new(future::ok(Some(self.state.lock().unwrap().symbols.clone())))
+        debug!("symbol");
+        let state = self.state.lock().unwrap();
+        let mut symbols = Vec::new();
+        for (_, file) in state.files.iter() {
+            symbols.append(&mut file.symbols.clone());
+        }
+        Box::new(future::ok(Some(symbols.clone())))
     }
 
     fn execute_command(&self, _: &Printer, _: ExecuteCommandParams) -> Self::ExecuteFuture {
+        debug!("exec");
         Box::new(future::ok(None))
     }
 
     fn completion(&self, _: CompletionParams) -> Self::CompletionFuture {
+        debug!("complete");
         Box::new(future::ok(None))
     }
 
     fn hover(&self, _param: TextDocumentPositionParams) -> Self::HoverFuture {
+        debug!("hover");
         Box::new(future::ok(None))
     }
 
     fn document_highlight(&self, _: TextDocumentPositionParams) -> Self::HighlightFuture {
+        debug!("highlight");
         Box::new(future::ok(None))
     }
 
     fn did_open(&self, printer: &Printer, params: DidOpenTextDocumentParams) {
+        debug!("didOpen");
         let uri = params.text_document.uri;
         if let Ok(path) = uri.to_file_path() {
             if let Ok(content) = fs::read_to_string(path) {
@@ -141,8 +160,18 @@ impl LanguageServer for Backend {
     }
 
     fn did_change(&self, printer: &Printer, params: DidChangeTextDocumentParams) {
+        debug!("didChange");
         let uri = params.text_document.uri;
         self.update(printer, uri, &params.content_changes[0].text);
+    }
+
+    fn did_close(&self, printer: &Printer, params: DidCloseTextDocumentParams) {
+        debug!("didClose");
+        let mut state = self.state.lock().unwrap();
+        if let Some(state) = state.files.get_mut(&params.text_document.uri) {
+            state.symbols.clear();
+        }
+        printer.publish_diagnostics(params.text_document.uri, vec![]);
     }
 }
 
