@@ -23,6 +23,13 @@ pub fn range(loc: &common::Loc) -> Range {
     }
 }
 
+pub fn range_name(loc: &common::Loc, name: &str) -> Range {
+    Range {
+        start: pos(loc),
+        end: pos(&common::Loc(loc.0, loc.1 + name.as_bytes().len() as u32)),
+    }
+}
+
 pub fn range2(loc: &common::Loc, end: &common::Loc) -> Range {
     Range {
         start: pos(loc),
