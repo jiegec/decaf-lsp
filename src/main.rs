@@ -21,6 +21,7 @@ struct State {
 #[derive(Debug, Default)]
 struct FileState {
     symbols: Vec<SymbolInformation>,
+    hovers: Vec<(Range, Hover)>,
 }
 
 #[derive(Debug, Default)]
@@ -39,6 +40,29 @@ impl State {
 
 impl Backend {
     fn update(&self, printer: &Printer, uri: Url, content: &str) {
+        // hovers
+        let mut tokens = syntax::parser::Lexer::new(content.as_bytes());
+        let mut hovers = Vec::new();
+        loop {
+            let tok = tokens.next();
+            if tok.ty == syntax::parser::TokenKind::_Eof {
+                break;
+            }
+            let range = token(&tok);
+            hovers.push((
+                range,
+                Hover {
+                    contents: HoverContents::Scalar(MarkedString::from_markdown(
+                        format!("{:?}", tok.ty)
+                    )),
+                    range: None,
+                },
+            ));
+        }
+        let mut state = self.state.lock().unwrap();
+        state.get_file(&uri).hovers = hovers;
+        drop(state);
+
         // symbols
         match syntax::parser::work(content, &syntax::ASTAlloc::default()) {
             Ok(program) => {
@@ -119,6 +143,7 @@ impl LanguageServer for Backend {
                 )),
                 workspace_symbol_provider: Some(true),
                 document_symbol_provider: Some(true),
+                hover_provider: Some(true),
                 ..ServerCapabilities::default()
             },
         })
@@ -149,8 +174,15 @@ impl LanguageServer for Backend {
         Box::new(future::ok(None))
     }
 
-    fn hover(&self, _param: TextDocumentPositionParams) -> Self::HoverFuture {
+    fn hover(&self, params: TextDocumentPositionParams) -> Self::HoverFuture {
         debug!("hover");
+        let mut state = self.state.lock().unwrap();
+        let file = state.get_file(&params.text_document.uri);
+        for (range, hover) in file.hovers.iter() {
+            if range.start <= params.position && range.end >= params.position {
+                return Box::new(future::ok(Some(hover.clone())));
+            }
+        }
         Box::new(future::ok(None))
     }
 
