@@ -3,6 +3,7 @@ use futures::future;
 use jsonrpc_core::{BoxFuture, Result};
 use log::*;
 use serde_json::Value;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
@@ -25,6 +26,15 @@ struct FileState {
 #[derive(Debug, Default)]
 struct Backend {
     state: Arc<Mutex<State>>,
+}
+
+impl State {
+    fn get_file(&mut self, uri: &Url) -> &mut FileState {
+        match self.files.entry(uri.clone()) {
+            Entry::Occupied(o) => o.into_mut(),
+            Entry::Vacant(v) => v.insert(FileState::default()),
+        }
+    }
 }
 
 impl Backend {
@@ -71,9 +81,7 @@ impl Backend {
                     }
                 }
                 let mut state = self.state.lock().unwrap();
-                if let Some(state) = state.files.get_mut(&uri) {
-                    state.symbols = symbols;
-                }
+                state.get_file(&uri).symbols = symbols;
                 printer.publish_diagnostics(uri, vec![]);
             }
             Err(errors) => {
