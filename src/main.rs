@@ -51,6 +51,23 @@ impl Backend {
             ExprKind::VarSel(varsel) => {
                 self.varsel(&expr.loc, varsel, symbols, hovers);
             }
+            ExprKind::IndexSel(indexsel) => {
+                self.expr(&indexsel.arr, symbols, hovers);
+                self.expr(&indexsel.idx, symbols, hovers);
+            }
+            ExprKind::Call(call) => {
+                self.expr(&call.func, symbols, hovers);
+                for arg in call.arg.iter() {
+                    self.expr(&arg, symbols, hovers);
+                }
+            }
+            ExprKind::Unary(un) => {
+                self.expr(&un.r, symbols, hovers);
+            }
+            ExprKind::Binary(bin) => {
+                self.expr(&bin.l, symbols, hovers);
+                self.expr(&bin.r, symbols, hovers);
+            }
             _ => {}
         }
     }
@@ -59,7 +76,7 @@ impl Backend {
         &self,
         loc: &Loc,
         varsel: &VarSel<'a>,
-        _symbols: &mut Vec<SymbolInformation>,
+        symbols: &mut Vec<SymbolInformation>,
         hovers: &mut Vec<(Range, Hover)>,
     ) {
         let var = varsel.var.get();
@@ -75,6 +92,9 @@ impl Backend {
                     range: Some(range(&loc)),
                 },
             ));
+        }
+        if let Some(expr) = &varsel.owner {
+            self.expr(&expr, symbols, hovers);
         }
     }
 
@@ -116,6 +136,34 @@ impl Backend {
             }
             StmtKind::ExprEval(expr) => {
                 self.expr(expr, symbols, hovers);
+            }
+            StmtKind::If(i) => {
+                self.expr(&i.cond, symbols, hovers);
+                self.block(&i.on_true, symbols, hovers);
+                if let Some(f) = &i.on_false {
+                    self.block(f, symbols, hovers);
+                }
+            }
+            StmtKind::While(w) => {
+                self.expr(&w.cond, symbols, hovers);
+                self.block(&w.body, symbols, hovers);
+            }
+            StmtKind::For(f) => {
+                self.stmt(&f.init, symbols, hovers);
+                self.expr(&f.cond, symbols, hovers);
+                self.stmt(&f.update, symbols, hovers);
+                self.block(&f.body, symbols, hovers);
+            }
+            StmtKind::Return(Some(expr)) => {
+                self.expr(&expr, symbols, hovers);
+            }
+            StmtKind::Print(exprs) => {
+                for expr in exprs.iter() {
+                    self.expr(&expr, symbols, hovers);
+                }
+            }
+            StmtKind::Block(block) => {
+                self.block(&block, symbols, hovers);
             }
             _ => {}
         }
@@ -163,6 +211,9 @@ impl Backend {
                         range: Some(range(&func.loc)),
                     },
                 ));
+                for param in func.param.iter() {
+                    self.var(param, symbols, hovers);
+                }
                 self.block(&func.body, symbols, hovers);
             }
             syntax::FieldDef::VarDef(var) => {
@@ -237,7 +288,7 @@ impl Backend {
                 break;
             }
 
-            if tok.ty == Id || tok.ty == LPar || tok.ty == RPar {
+            if tok.ty == Id || tok.ty == LPar || tok.ty == RPar || tok.ty == Semi {
                 continue;
             }
 
