@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
 use std::sync::Mutex;
-use syntax;
+use syntax::{self, *};
 use tokio;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{LanguageServer, LspService, Printer, Server};
@@ -40,6 +40,159 @@ impl State {
 }
 
 impl Backend {
+    fn var<'a>(
+        &self,
+        uri: Url,
+        var: &VarDef<'a>,
+        symbols: &mut Vec<SymbolInformation>,
+        hovers: &mut Vec<(Range, Hover)>,
+    ) {
+        hovers.push((
+            range_name(&var.loc, var.name),
+            Hover {
+                contents: HoverContents::Scalar(MarkedString::from_markdown(format!(
+                    "{}: {:?}",
+                    var.name,
+                    var.ty.get(),
+                ))),
+                range: Some(range(&var.loc)),
+            },
+        ));
+    }
+
+    fn stmt<'a>(
+        &self,
+        uri: Url,
+        stmt: &Stmt<'a>,
+        symbols: &mut Vec<SymbolInformation>,
+        hovers: &mut Vec<(Range, Hover)>,
+    ) {
+        match &stmt.kind {
+            StmtKind::Assign(assign) => {},
+            StmtKind::LocalVarDef(var) => {
+                self.var(uri.clone(), var, symbols, hovers);
+            },
+            StmtKind::ExprEval(expr) => {},
+            _ => {}
+        }
+    }
+
+    fn block<'a>(
+        &self,
+        uri: Url,
+        block: &Block<'a>,
+        symbols: &mut Vec<SymbolInformation>,
+        hovers: &mut Vec<(Range, Hover)>,
+    ) {
+        for stmt in block.stmt.iter() {
+            self.stmt(uri.clone(), stmt, symbols, hovers);
+        }
+    }
+
+    fn field<'a>(
+        &self,
+        uri: Url,
+        class: &ClassDef<'a>,
+        field: &FieldDef<'a>,
+        symbols: &mut Vec<SymbolInformation>,
+        hovers: &mut Vec<(Range, Hover)>,
+    ) {
+        match field {
+            syntax::FieldDef::FuncDef(func) => {
+                symbols.push(SymbolInformation {
+                    name: func.name.to_string(),
+                    kind: SymbolKind::Method,
+                    deprecated: None,
+                    location: Location {
+                        uri: uri.clone(),
+                        range: range(&func.loc),
+                    },
+                    container_name: Some(class.name.to_string()),
+                });
+                hovers.push((
+                    range_name(&func.loc, func.name),
+                    Hover {
+                        contents: HoverContents::Scalar(MarkedString::from_markdown(format!(
+                            "{}: {:?}",
+                            func.name,
+                            syntax::ty::Ty::mk_func(func)
+                        ))),
+                        range: Some(range(&func.loc)),
+                    },
+                ));
+                self.block(uri.clone(), &func.body, symbols, hovers);
+            }
+            syntax::FieldDef::VarDef(var) => {
+                symbols.push(SymbolInformation {
+                    name: var.name.to_string(),
+                    kind: SymbolKind::Field,
+                    deprecated: None,
+                    location: Location {
+                        uri: uri.clone(),
+                        range: range(&var.loc),
+                    },
+                    container_name: Some(class.name.to_string()),
+                });
+                hovers.push((
+                    range_name(&var.loc, var.name),
+                    Hover {
+                        contents: HoverContents::Scalar(MarkedString::from_markdown(format!(
+                            "{}: {:?}",
+                            var.name,
+                            var.ty.get()
+                        ))),
+                        range: Some(range(&var.loc)),
+                    },
+                ));
+            }
+        }
+    }
+
+    fn class<'a>(
+        &self,
+        uri: Url,
+        class: &ClassDef<'a>,
+        symbols: &mut Vec<SymbolInformation>,
+        hovers: &mut Vec<(Range, Hover)>,
+    ) {
+        let class_range = range2(&class.loc, &class.end);
+        symbols.push(SymbolInformation {
+            name: class.name.to_string(),
+            kind: SymbolKind::Class,
+            deprecated: None,
+            location: Location {
+                uri: uri.clone(),
+                range: class_range,
+            },
+            container_name: None,
+        });
+        hovers.push((
+            class_range,
+            Hover {
+                contents: HoverContents::Scalar(MarkedString::from_markdown(
+                    class.name.to_string(),
+                )),
+                range: Some(class_range),
+            },
+        ));
+
+        for field in class.field.iter() {
+            self.field(uri.clone(), class, field, symbols, hovers);
+        }
+    }
+
+    fn program<'a>(
+        &self,
+        uri: Url,
+        program: &Program<'a>,
+        symbols: &mut Vec<SymbolInformation>,
+        hovers: &mut Vec<(Range, Hover)>,
+    ) {
+        for class in program.class.iter() {
+            self.class(uri.clone(), class, symbols, hovers);
+        }
+    }
+
     fn update(&self, printer: &Printer, uri: Url, content: &str) {
         // hovers
         let mut tokens = syntax::parser::Lexer::new(content.as_bytes());
@@ -102,83 +255,7 @@ impl Backend {
                 // symbols and hover
                 let mut symbols = Vec::new();
                 let mut hovers = Vec::new();
-                for class in program.class.iter() {
-                    let class_range = range2(&class.loc, &class.end);
-                    symbols.push(SymbolInformation {
-                        name: class.name.to_string(),
-                        kind: SymbolKind::Class,
-                        deprecated: None,
-                        location: Location {
-                            uri: uri.clone(),
-                            range: class_range,
-                        },
-                        container_name: None,
-                    });
-                    hovers.push((
-                        class_range,
-                        Hover {
-                            contents: HoverContents::Scalar(MarkedString::from_markdown(
-                                class.name.to_string(),
-                            )),
-                            range: Some(class_range),
-                        },
-                    ));
-
-                    for field in class.field.iter() {
-                        match field {
-                            syntax::FieldDef::FuncDef(func) => {
-                                symbols.push(SymbolInformation {
-                                    name: func.name.to_string(),
-                                    kind: SymbolKind::Method,
-                                    deprecated: None,
-                                    location: Location {
-                                        uri: uri.clone(),
-                                        range: range(&func.loc),
-                                    },
-                                    container_name: Some(class.name.to_string()),
-                                });
-                                hovers.push((
-                                    range_name(&func.loc, func.name),
-                                    Hover {
-                                        contents: HoverContents::Scalar(
-                                            MarkedString::from_markdown(format!(
-                                                "{}: {:?}",
-                                                func.name,
-                                                syntax::ty::Ty::mk_func(func)
-                                            )),
-                                        ),
-                                        range: Some(range(&func.loc)),
-                                    },
-                                ));
-                            }
-                            syntax::FieldDef::VarDef(var) => {
-                                symbols.push(SymbolInformation {
-                                    name: var.name.to_string(),
-                                    kind: SymbolKind::Field,
-                                    deprecated: None,
-                                    location: Location {
-                                        uri: uri.clone(),
-                                        range: range(&var.loc),
-                                    },
-                                    container_name: Some(class.name.to_string()),
-                                });
-                                hovers.push((
-                                    range_name(&var.loc, var.name),
-                                    Hover {
-                                        contents: HoverContents::Scalar(
-                                            MarkedString::from_markdown(format!(
-                                                "{}: {:?}",
-                                                var.name,
-                                                var.ty.get()
-                                            )),
-                                        ),
-                                        range: Some(range(&var.loc)),
-                                    },
-                                ));
-                            }
-                        }
-                    }
-                }
+                self.program(uri.clone(), program, &mut symbols, &mut hovers);
                 symbols.reverse();
                 let mut state = self.state.lock().unwrap();
                 state.get_file(&uri).symbols = symbols;
