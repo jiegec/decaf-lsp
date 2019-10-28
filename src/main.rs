@@ -1,3 +1,4 @@
+use common::Loc;
 use decaf_lsp::*;
 use futures::future;
 use jsonrpc_core::{BoxFuture, Result};
@@ -40,11 +41,47 @@ impl State {
 }
 
 impl Backend {
+    fn expr<'a>(
+        &self,
+        expr: &Expr<'a>,
+        symbols: &mut Vec<SymbolInformation>,
+        hovers: &mut Vec<(Range, Hover)>,
+    ) {
+        match &expr.kind {
+            ExprKind::VarSel(varsel) => {
+                self.varsel(&expr.loc, varsel, symbols, hovers);
+            }
+            _ => {}
+        }
+    }
+
+    fn varsel<'a>(
+        &self,
+        loc: &Loc,
+        varsel: &VarSel<'a>,
+        _symbols: &mut Vec<SymbolInformation>,
+        hovers: &mut Vec<(Range, Hover)>,
+    ) {
+        let var = varsel.var.get();
+        if let Some(var) = var {
+            hovers.push((
+                range_name(loc, varsel.name),
+                Hover {
+                    contents: HoverContents::Scalar(MarkedString::from_markdown(format!(
+                        "{}: {:?}",
+                        varsel.name,
+                        var.ty.get(),
+                    ))),
+                    range: Some(range(&loc)),
+                },
+            ));
+        }
+    }
+
     fn var<'a>(
         &self,
-        uri: Url,
         var: &VarDef<'a>,
-        symbols: &mut Vec<SymbolInformation>,
+        _symbols: &mut Vec<SymbolInformation>,
         hovers: &mut Vec<(Range, Hover)>,
     ) {
         hovers.push((
@@ -62,30 +99,36 @@ impl Backend {
 
     fn stmt<'a>(
         &self,
-        uri: Url,
         stmt: &Stmt<'a>,
         symbols: &mut Vec<SymbolInformation>,
         hovers: &mut Vec<(Range, Hover)>,
     ) {
         match &stmt.kind {
-            StmtKind::Assign(assign) => {},
+            StmtKind::Assign(assign) => {
+                self.expr(&assign.dst, symbols, hovers);
+                self.expr(&assign.src, symbols, hovers);
+            }
             StmtKind::LocalVarDef(var) => {
-                self.var(uri.clone(), var, symbols, hovers);
-            },
-            StmtKind::ExprEval(expr) => {},
+                self.var(var, symbols, hovers);
+                if let Some((_loc, expr)) = &var.init {
+                    self.expr(expr, symbols, hovers);
+                }
+            }
+            StmtKind::ExprEval(expr) => {
+                self.expr(expr, symbols, hovers);
+            }
             _ => {}
         }
     }
 
     fn block<'a>(
         &self,
-        uri: Url,
         block: &Block<'a>,
         symbols: &mut Vec<SymbolInformation>,
         hovers: &mut Vec<(Range, Hover)>,
     ) {
         for stmt in block.stmt.iter() {
-            self.stmt(uri.clone(), stmt, symbols, hovers);
+            self.stmt(stmt, symbols, hovers);
         }
     }
 
@@ -120,7 +163,7 @@ impl Backend {
                         range: Some(range(&func.loc)),
                     },
                 ));
-                self.block(uri.clone(), &func.body, symbols, hovers);
+                self.block(&func.body, symbols, hovers);
             }
             syntax::FieldDef::VarDef(var) => {
                 symbols.push(SymbolInformation {
@@ -133,17 +176,7 @@ impl Backend {
                     },
                     container_name: Some(class.name.to_string()),
                 });
-                hovers.push((
-                    range_name(&var.loc, var.name),
-                    Hover {
-                        contents: HoverContents::Scalar(MarkedString::from_markdown(format!(
-                            "{}: {:?}",
-                            var.name,
-                            var.ty.get()
-                        ))),
-                        range: Some(range(&var.loc)),
-                    },
-                ));
+                self.var(var, symbols, hovers);
             }
         }
     }
@@ -204,7 +237,7 @@ impl Backend {
                 break;
             }
 
-            if tok.ty == Id {
+            if tok.ty == Id || tok.ty == LPar || tok.ty == RPar {
                 continue;
             }
 
