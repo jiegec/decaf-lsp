@@ -90,7 +90,7 @@ dependencies = [
 [[package]]
 name = "common"
 version = "0.1.0"
-source = "git+https://github.com/jiegec/decaf-rs?branch=dev#27c19c3615a5fff1c504b31ef556f9366e4f37b4"
+source = "git+https://github.com/jiegec/decaf-rs?branch=dev#42fedf30891119c5bb404a9fc668ee5fc281a59a"
 dependencies = [
  "hashbrown 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "indexmap 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -193,7 +193,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "grammar-config"
 version = "0.1.0"
-source = "git+https://github.com/MashPlant/lalr1#f2d914218571c7aed4021ab1d259195d7a0de885"
+source = "git+https://github.com/MashPlant/lalr1#e89bdf4969bab28dcf50640b92e10662847b44cb"
 dependencies = [
  "hashbrown 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "indexmap 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -274,7 +274,7 @@ dependencies = [
 [[package]]
 name = "lalr1-core"
 version = "0.1.0"
-source = "git+https://github.com/MashPlant/lalr1#f2d914218571c7aed4021ab1d259195d7a0de885"
+source = "git+https://github.com/MashPlant/lalr1#e89bdf4969bab28dcf50640b92e10662847b44cb"
 dependencies = [
  "bitset 0.1.0 (git+https://github.com/MashPlant/bitset)",
  "grammar-config 0.1.0 (git+https://github.com/MashPlant/lalr1)",
@@ -308,7 +308,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "ll1-core"
 version = "0.1.0"
-source = "git+https://github.com/MashPlant/lalr1#f2d914218571c7aed4021ab1d259195d7a0de885"
+source = "git+https://github.com/MashPlant/lalr1#e89bdf4969bab28dcf50640b92e10662847b44cb"
 dependencies = [
  "bitset 0.1.0 (git+https://github.com/MashPlant/bitset)",
  "grammar-config 0.1.0 (git+https://github.com/MashPlant/lalr1)",
@@ -461,7 +461,7 @@ dependencies = [
 [[package]]
 name = "parser-gen"
 version = "0.1.0"
-source = "git+https://github.com/MashPlant/lalr1#f2d914218571c7aed4021ab1d259195d7a0de885"
+source = "git+https://github.com/MashPlant/lalr1#e89bdf4969bab28dcf50640b92e10662847b44cb"
 dependencies = [
  "aho-corasick 0.7.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitset 0.1.0 (git+https://github.com/MashPlant/bitset)",
@@ -475,7 +475,7 @@ dependencies = [
 [[package]]
 name = "parser-macros"
 version = "0.1.0"
-source = "git+https://github.com/MashPlant/lalr1#f2d914218571c7aed4021ab1d259195d7a0de885"
+source = "git+https://github.com/MashPlant/lalr1#e89bdf4969bab28dcf50640b92e10662847b44cb"
 dependencies = [
  "grammar-config 0.1.0 (git+https://github.com/MashPlant/lalr1)",
  "indexmap 1.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -499,7 +499,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "print"
 version = "0.1.0"
-source = "git+https://github.com/MashPlant/re2dfa#d3544ab7dd45aca4ade81773ac88dd1ee67decd7"
+source = "git+https://github.com/MashPlant/re2dfa#b8b85e9b46bd65c49ab1f24a0df638cb003410cc"
 
 [[package]]
 name = "proc-macro-crate"
@@ -544,7 +544,7 @@ dependencies = [
 [[package]]
 name = "re2dfa"
 version = "1.0.0"
-source = "git+https://github.com/MashPlant/re2dfa#d3544ab7dd45aca4ade81773ac88dd1ee67decd7"
+source = "git+https://github.com/MashPlant/re2dfa#b8b85e9b46bd65c49ab1f24a0df638cb003410cc"
 dependencies = [
  "bitset 0.1.0 (git+https://github.com/MashPlant/bitset)",
  "nom 5.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -690,7 +690,7 @@ dependencies = [
 [[package]]
 name = "syntax"
 version = "0.1.0"
-source = "git+https://github.com/jiegec/decaf-rs?branch=dev#27c19c3615a5fff1c504b31ef556f9366e4f37b4"
+source = "git+https://github.com/jiegec/decaf-rs?branch=dev#42fedf30891119c5bb404a9fc668ee5fc281a59a"
 dependencies = [
  "common 0.1.0 (git+https://github.com/jiegec/decaf-rs?branch=dev)",
  "derive_more 0.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -933,7 +933,7 @@ dependencies = [
 [[package]]
 name = "typeck"
 version = "0.1.0"
-source = "git+https://github.com/jiegec/decaf-rs?branch=dev#27c19c3615a5fff1c504b31ef556f9366e4f37b4"
+source = "git+https://github.com/jiegec/decaf-rs?branch=dev#42fedf30891119c5bb404a9fc668ee5fc281a59a"
 dependencies = [
  "common 0.1.0 (git+https://github.com/jiegec/decaf-rs?branch=dev)",
  "syntax 0.1.0 (git+https://github.com/jiegec/decaf-rs?branch=dev)",

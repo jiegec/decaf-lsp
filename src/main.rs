@@ -79,20 +79,17 @@ impl Backend {
         symbols: &mut Vec<SymbolInformation>,
         hovers: &mut Vec<(Range, Hover)>,
     ) {
-        let var = varsel.var.get();
-        if let Some(var) = var {
-            hovers.push((
-                range_name(loc, varsel.name),
-                Hover {
-                    contents: HoverContents::Scalar(MarkedString::from_markdown(format!(
-                        "{}: {:?}",
-                        varsel.name,
-                        var.ty.get(),
-                    ))),
-                    range: Some(range(&loc)),
-                },
-            ));
-        }
+        hovers.push((
+            range_name(loc, varsel.name),
+            Hover {
+                contents: HoverContents::Scalar(MarkedString::from_markdown(format!(
+                    "{}: {:?}",
+                    varsel.name,
+                    varsel.ty.get(),
+                ))),
+                range: Some(range(&loc)),
+            },
+        ));
         if let Some(expr) = &varsel.owner {
             self.expr(&expr, symbols, hovers);
         }
@@ -251,7 +248,7 @@ impl Backend {
             container_name: None,
         });
         hovers.push((
-            class_range,
+            range_name(&class.loc, class.name),
             Hover {
                 contents: HoverContents::Scalar(MarkedString::from_markdown(
                     class.name.to_string(),
