@@ -24,6 +24,7 @@ struct State {
 struct FileState {
     symbols: Vec<SymbolInformation>,
     hovers: Vec<(Range, Hover)>,
+    ranges: Vec<FoldingRange>,
 }
 
 #[derive(Debug, Default)]
@@ -235,6 +236,7 @@ impl Backend {
         class: &ClassDef<'a>,
         symbols: &mut Vec<SymbolInformation>,
         hovers: &mut Vec<(Range, Hover)>,
+        ranges: &mut Vec<FoldingRange>,
     ) {
         let class_range = range2(&class.loc, &class.end);
         symbols.push(SymbolInformation {
@@ -256,6 +258,13 @@ impl Backend {
                 range: Some(class_range),
             },
         ));
+        ranges.push(FoldingRange {
+            start_line: (class.loc.0 - 1) as u64,
+            start_character: None,
+            end_line: (class.end.0 - 1) as u64,
+            end_character: None,
+            kind: Some(FoldingRangeKind::Region),
+        });
 
         for field in class.field.iter() {
             self.field(uri.clone(), class, field, symbols, hovers);
@@ -268,9 +277,10 @@ impl Backend {
         program: &Program<'a>,
         symbols: &mut Vec<SymbolInformation>,
         hovers: &mut Vec<(Range, Hover)>,
+        ranges: &mut Vec<FoldingRange>,
     ) {
         for class in program.class.iter() {
-            self.class(uri.clone(), class, symbols, hovers);
+            self.class(uri.clone(), class, symbols, hovers, ranges);
         }
     }
 
@@ -285,7 +295,32 @@ impl Backend {
                 break;
             }
 
-            if tok.ty == Id || tok.ty == LPar || tok.ty == RPar || tok.ty == Semi {
+            if tok.ty == Id
+                || tok.ty == Le
+                || tok.ty == Ge
+                || tok.ty == Eq
+                || tok.ty == Ne
+                || tok.ty == And
+                || tok.ty == Add
+                || tok.ty == Sub
+                || tok.ty == Mul
+                || tok.ty == Div
+                || tok.ty == Mod
+                || tok.ty == Assign
+                || tok.ty == Lt
+                || tok.ty == Gt
+                || tok.ty == Dot
+                || tok.ty == Comma
+                || tok.ty == Semi
+                || tok.ty == Not
+                || tok.ty == LPar
+                || tok.ty == RPar
+                || tok.ty == LBrk
+                || tok.ty == RBrk
+                || tok.ty == LBrc
+                || tok.ty == RBrc
+                || tok.ty == Colon
+            {
                 continue;
             }
 
@@ -333,15 +368,17 @@ impl Backend {
 
                 printer.publish_diagnostics(uri.clone(), diag);
 
-                // symbols and hover
+                // symbols, hovers and ranges
                 let mut symbols = Vec::new();
                 let mut hovers = Vec::new();
-                self.program(uri.clone(), program, &mut symbols, &mut hovers);
+                let mut ranges = Vec::new();
+                self.program(uri.clone(), program, &mut symbols, &mut hovers, &mut ranges);
                 symbols.reverse();
+                debug!("hovers {:?}", hovers);
                 let mut state = self.state.lock().unwrap();
                 state.get_file(&uri).symbols = symbols;
-                debug!("hovers {:?}", hovers);
                 state.get_file(&uri).hovers.append(&mut hovers);
+                state.get_file(&uri).ranges = ranges;
                 drop(state);
             }
             Err(errors) => {
@@ -370,6 +407,7 @@ impl LanguageServer for Backend {
     type HoverFuture = BoxFuture<Option<Hover>>;
     type HighlightFuture = BoxFuture<Option<Vec<DocumentHighlight>>>;
     type DocumentSymbolFuture = BoxFuture<Option<DocumentSymbolResponse>>;
+    type FoldingRangeFuture = BoxFuture<Option<Vec<FoldingRange>>>;
 
     fn initialize(&self, _: &Printer, _: InitializeParams) -> Result<InitializeResult> {
         Ok(InitializeResult {
@@ -380,6 +418,7 @@ impl LanguageServer for Backend {
                 workspace_symbol_provider: Some(true),
                 document_symbol_provider: Some(true),
                 hover_provider: Some(true),
+                folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
                 ..ServerCapabilities::default()
             },
         })
@@ -398,6 +437,13 @@ impl LanguageServer for Backend {
             symbols.append(&mut file.symbols.clone());
         }
         Box::new(future::ok(Some(symbols.clone())))
+    }
+
+    fn folding_range(&self, params: FoldingRangeParams) -> Self::FoldingRangeFuture {
+        debug!("folding");
+        let mut state = self.state.lock().unwrap();
+        let file = state.get_file(&params.text_document.uri);
+        Box::new(future::ok(Some(file.ranges.clone())))
     }
 
     fn execute_command(&self, _: &Printer, _: ExecuteCommandParams) -> Self::ExecuteFuture {
