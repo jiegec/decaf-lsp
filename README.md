@@ -8,6 +8,7 @@ A language server implementation for [Decaf language](https://decaf-lang.gitbook
 2. Symbol hovers with type information
 3. Syntax diagnostics
 4. Folding ranges
+5. Goto definition
 
 ## Installation
 

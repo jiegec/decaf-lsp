@@ -905,7 +905,7 @@ dependencies = [
 [[package]]
 name = "tower-lsp"
 version = "0.4.0"
-source = "git+https://github.com/jiegec/tower-lsp.git#0fefa4456a020063c4323b81b38aa5f0b37c0bf2"
+source = "git+https://github.com/jiegec/tower-lsp.git#8ab67d99e2437ff1e1e6483429a0f1e0cbc63be2"
 dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",

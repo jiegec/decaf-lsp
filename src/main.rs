@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use syntax::{self, *};
 use tokio;
+use tower_lsp::lsp_types::request::*;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{LanguageServer, LspService, Printer, Server};
 use typeck;
@@ -25,6 +26,7 @@ struct FileState {
     symbols: Vec<SymbolInformation>,
     hovers: Vec<(Range, Hover)>,
     ranges: Vec<FoldingRange>,
+    definitions: Vec<(Range, Range)>, // ref, def
 }
 
 #[derive(Debug, Default)]
@@ -42,45 +44,34 @@ impl State {
 }
 
 impl Backend {
-    fn expr<'a>(
-        &self,
-        expr: &Expr<'a>,
-        symbols: &mut Vec<SymbolInformation>,
-        hovers: &mut Vec<(Range, Hover)>,
-    ) {
+    fn expr<'a>(&self, expr: &Expr<'a>, state: &mut FileState) {
         match &expr.kind {
             ExprKind::VarSel(varsel) => {
-                self.varsel(&expr.loc, varsel, symbols, hovers);
+                self.varsel(&expr.loc, varsel, state);
             }
             ExprKind::IndexSel(indexsel) => {
-                self.expr(&indexsel.arr, symbols, hovers);
-                self.expr(&indexsel.idx, symbols, hovers);
+                self.expr(&indexsel.arr, state);
+                self.expr(&indexsel.idx, state);
             }
             ExprKind::Call(call) => {
-                self.expr(&call.func, symbols, hovers);
+                self.expr(&call.func, state);
                 for arg in call.arg.iter() {
-                    self.expr(&arg, symbols, hovers);
+                    self.expr(&arg, state);
                 }
             }
             ExprKind::Unary(un) => {
-                self.expr(&un.r, symbols, hovers);
+                self.expr(&un.r, state);
             }
             ExprKind::Binary(bin) => {
-                self.expr(&bin.l, symbols, hovers);
-                self.expr(&bin.r, symbols, hovers);
+                self.expr(&bin.l, state);
+                self.expr(&bin.r, state);
             }
             _ => {}
         }
     }
 
-    fn varsel<'a>(
-        &self,
-        loc: &Loc,
-        varsel: &VarSel<'a>,
-        symbols: &mut Vec<SymbolInformation>,
-        hovers: &mut Vec<(Range, Hover)>,
-    ) {
-        hovers.push((
+    fn varsel<'a>(&self, loc: &Loc, varsel: &VarSel<'a>, state: &mut FileState) {
+        state.hovers.push((
             range_name(loc, varsel.name),
             Hover {
                 contents: HoverContents::Scalar(MarkedString::from_markdown(format!(
@@ -92,17 +83,19 @@ impl Backend {
             },
         ));
         if let Some(expr) = &varsel.owner {
-            self.expr(&expr, symbols, hovers);
+            self.expr(&expr, state);
+        }
+        if let Some(var) = &varsel.var.get() {
+            debug!("var {} {:?} {:?}", var.name, var.loc, var.ty.get());
+            state.definitions.push((
+                range_name(&loc, varsel.name),
+                range_name(&var.loc, var.name),
+            ));
         }
     }
 
-    fn var<'a>(
-        &self,
-        var: &VarDef<'a>,
-        _symbols: &mut Vec<SymbolInformation>,
-        hovers: &mut Vec<(Range, Hover)>,
-    ) {
-        hovers.push((
+    fn var<'a>(&self, var: &VarDef<'a>, state: &mut FileState) {
+        state.hovers.push((
             range_name(&var.loc, var.name),
             Hover {
                 contents: HoverContents::Scalar(MarkedString::from_markdown(format!(
@@ -115,66 +108,56 @@ impl Backend {
         ));
     }
 
-    fn stmt<'a>(
-        &self,
-        stmt: &Stmt<'a>,
-        symbols: &mut Vec<SymbolInformation>,
-        hovers: &mut Vec<(Range, Hover)>,
-    ) {
+    fn stmt<'a>(&self, stmt: &Stmt<'a>, state: &mut FileState) {
         match &stmt.kind {
             StmtKind::Assign(assign) => {
-                self.expr(&assign.dst, symbols, hovers);
-                self.expr(&assign.src, symbols, hovers);
+                self.expr(&assign.dst, state);
+                self.expr(&assign.src, state);
             }
             StmtKind::LocalVarDef(var) => {
-                self.var(var, symbols, hovers);
+                self.var(var, state);
                 if let Some((_loc, expr)) = &var.init {
-                    self.expr(expr, symbols, hovers);
+                    self.expr(expr, state);
                 }
             }
             StmtKind::ExprEval(expr) => {
-                self.expr(expr, symbols, hovers);
+                self.expr(expr, state);
             }
             StmtKind::If(i) => {
-                self.expr(&i.cond, symbols, hovers);
-                self.block(&i.on_true, symbols, hovers);
+                self.expr(&i.cond, state);
+                self.block(&i.on_true, state);
                 if let Some(f) = &i.on_false {
-                    self.block(f, symbols, hovers);
+                    self.block(f, state);
                 }
             }
             StmtKind::While(w) => {
-                self.expr(&w.cond, symbols, hovers);
-                self.block(&w.body, symbols, hovers);
+                self.expr(&w.cond, state);
+                self.block(&w.body, state);
             }
             StmtKind::For(f) => {
-                self.stmt(&f.init, symbols, hovers);
-                self.expr(&f.cond, symbols, hovers);
-                self.stmt(&f.update, symbols, hovers);
-                self.block(&f.body, symbols, hovers);
+                self.stmt(&f.init, state);
+                self.expr(&f.cond, state);
+                self.stmt(&f.update, state);
+                self.block(&f.body, state);
             }
             StmtKind::Return(Some(expr)) => {
-                self.expr(&expr, symbols, hovers);
+                self.expr(&expr, state);
             }
             StmtKind::Print(exprs) => {
                 for expr in exprs.iter() {
-                    self.expr(&expr, symbols, hovers);
+                    self.expr(&expr, state);
                 }
             }
             StmtKind::Block(block) => {
-                self.block(&block, symbols, hovers);
+                self.block(&block, state);
             }
             _ => {}
         }
     }
 
-    fn block<'a>(
-        &self,
-        block: &Block<'a>,
-        symbols: &mut Vec<SymbolInformation>,
-        hovers: &mut Vec<(Range, Hover)>,
-    ) {
+    fn block<'a>(&self, block: &Block<'a>, state: &mut FileState) {
         for stmt in block.stmt.iter() {
-            self.stmt(stmt, symbols, hovers);
+            self.stmt(stmt, state);
         }
     }
 
@@ -183,12 +166,11 @@ impl Backend {
         uri: Url,
         class: &ClassDef<'a>,
         field: &FieldDef<'a>,
-        symbols: &mut Vec<SymbolInformation>,
-        hovers: &mut Vec<(Range, Hover)>,
+        state: &mut FileState,
     ) {
         match field {
             syntax::FieldDef::FuncDef(func) => {
-                symbols.push(SymbolInformation {
+                state.symbols.push(SymbolInformation {
                     name: func.name.to_string(),
                     kind: SymbolKind::Method,
                     deprecated: None,
@@ -198,7 +180,7 @@ impl Backend {
                     },
                     container_name: Some(class.name.to_string()),
                 });
-                hovers.push((
+                state.hovers.push((
                     range_name(&func.loc, func.name),
                     Hover {
                         contents: HoverContents::Scalar(MarkedString::from_markdown(format!(
@@ -210,12 +192,12 @@ impl Backend {
                     },
                 ));
                 for param in func.param.iter() {
-                    self.var(param, symbols, hovers);
+                    self.var(param, state);
                 }
-                self.block(&func.body, symbols, hovers);
+                self.block(&func.body, state);
             }
             syntax::FieldDef::VarDef(var) => {
-                symbols.push(SymbolInformation {
+                state.symbols.push(SymbolInformation {
                     name: var.name.to_string(),
                     kind: SymbolKind::Field,
                     deprecated: None,
@@ -225,21 +207,14 @@ impl Backend {
                     },
                     container_name: Some(class.name.to_string()),
                 });
-                self.var(var, symbols, hovers);
+                self.var(var, state);
             }
         }
     }
 
-    fn class<'a>(
-        &self,
-        uri: Url,
-        class: &ClassDef<'a>,
-        symbols: &mut Vec<SymbolInformation>,
-        hovers: &mut Vec<(Range, Hover)>,
-        ranges: &mut Vec<FoldingRange>,
-    ) {
+    fn class<'a>(&self, uri: Url, class: &ClassDef<'a>, state: &mut FileState) {
         let class_range = range2(&class.loc, &class.end);
-        symbols.push(SymbolInformation {
+        state.symbols.push(SymbolInformation {
             name: class.name.to_string(),
             kind: SymbolKind::Class,
             deprecated: None,
@@ -249,7 +224,7 @@ impl Backend {
             },
             container_name: None,
         });
-        hovers.push((
+        state.hovers.push((
             range_name(&class.loc, class.name),
             Hover {
                 contents: HoverContents::Scalar(MarkedString::from_markdown(
@@ -258,7 +233,7 @@ impl Backend {
                 range: Some(class_range),
             },
         ));
-        ranges.push(FoldingRange {
+        state.ranges.push(FoldingRange {
             start_line: (class.loc.0 - 1) as u64,
             start_character: None,
             end_line: (class.end.0 - 1) as u64,
@@ -267,20 +242,13 @@ impl Backend {
         });
 
         for field in class.field.iter() {
-            self.field(uri.clone(), class, field, symbols, hovers);
+            self.field(uri.clone(), class, field, state);
         }
     }
 
-    fn program<'a>(
-        &self,
-        uri: Url,
-        program: &Program<'a>,
-        symbols: &mut Vec<SymbolInformation>,
-        hovers: &mut Vec<(Range, Hover)>,
-        ranges: &mut Vec<FoldingRange>,
-    ) {
+    fn program<'a>(&self, uri: Url, program: &Program<'a>, state: &mut FileState) {
         for class in program.class.iter() {
-            self.class(uri.clone(), class, symbols, hovers, ranges);
+            self.class(uri.clone(), class, state);
         }
     }
 
@@ -369,16 +337,16 @@ impl Backend {
                 printer.publish_diagnostics(uri.clone(), diag);
 
                 // symbols, hovers and ranges
-                let mut symbols = Vec::new();
-                let mut hovers = Vec::new();
-                let mut ranges = Vec::new();
-                self.program(uri.clone(), program, &mut symbols, &mut hovers, &mut ranges);
-                symbols.reverse();
-                debug!("hovers {:?}", hovers);
+                let mut file_state = FileState::default();
+                self.program(uri.clone(), program, &mut file_state);
+                file_state.symbols.reverse();
+                debug!("hovers {:?}", file_state.hovers);
+                debug!("def {:?}", file_state.definitions);
                 let mut state = self.state.lock().unwrap();
-                state.get_file(&uri).symbols = symbols;
-                state.get_file(&uri).hovers.append(&mut hovers);
-                state.get_file(&uri).ranges = ranges;
+                state.get_file(&uri).symbols = file_state.symbols;
+                state.get_file(&uri).hovers.append(&mut file_state.hovers);
+                state.get_file(&uri).ranges = file_state.ranges;
+                state.get_file(&uri).definitions = file_state.definitions;
                 drop(state);
             }
             Err(errors) => {
@@ -408,6 +376,7 @@ impl LanguageServer for Backend {
     type HighlightFuture = BoxFuture<Option<Vec<DocumentHighlight>>>;
     type DocumentSymbolFuture = BoxFuture<Option<DocumentSymbolResponse>>;
     type FoldingRangeFuture = BoxFuture<Option<Vec<FoldingRange>>>;
+    type GotoDefinitionFuture = BoxFuture<Option<GotoDefinitionResponse>>;
 
     fn initialize(&self, _: &Printer, _: InitializeParams) -> Result<InitializeResult> {
         Ok(InitializeResult {
@@ -419,6 +388,7 @@ impl LanguageServer for Backend {
                 document_symbol_provider: Some(true),
                 hover_provider: Some(true),
                 folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+                definition_provider: Some(true),
                 ..ServerCapabilities::default()
             },
         })
@@ -489,6 +459,36 @@ impl LanguageServer for Backend {
         Box::new(future::ok(Some(DocumentSymbolResponse::Flat(
             file.symbols.clone(),
         ))))
+    }
+
+    fn definition(&self, params: TextDocumentPositionParams) -> Self::GotoDefinitionFuture {
+        debug!("definition");
+        let mut state = self.state.lock().unwrap();
+        let file = state.get_file(&params.text_document.uri);
+        let mut result: Option<(Range, Range)> = None;
+        for (range, def) in file.definitions.iter() {
+            if range.start <= params.position && range.end >= params.position {
+                result = Some(if let Some((old_range, old_hover)) = result {
+                    if range.end <= old_range.end && range.start >= old_range.start {
+                        (*range, def.clone())
+                    } else {
+                        (old_range, old_hover)
+                    }
+                } else {
+                    (*range, def.clone())
+                });
+            }
+        }
+        Box::new(future::ok(result.map(|res| {
+            GotoDefinitionResponse::Scalar(Location {
+                uri: params.text_document.uri.clone(),
+                range: res.1,
+            })
+        })))
+    }
+
+    fn declaration(&self, params: TextDocumentPositionParams) -> Self::GotoDefinitionFuture {
+        self.definition(params)
     }
 
     fn did_open(&self, printer: &Printer, params: DidOpenTextDocumentParams) {
