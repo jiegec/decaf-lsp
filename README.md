@@ -9,6 +9,7 @@ A language server implementation for [Decaf language](https://decaf-lang.gitbook
 3. Syntax diagnostics
 4. Folding ranges
 5. Goto definition
+6. Completion for builtin functions
 
 ## Installation
 

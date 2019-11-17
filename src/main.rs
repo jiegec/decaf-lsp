@@ -23,6 +23,7 @@ struct State {
 
 #[derive(Debug, Default)]
 struct FileState {
+    content: String,
     symbols: Vec<SymbolInformation>,
     hovers: Vec<(Range, Hover)>,
     ranges: Vec<FoldingRange>,
@@ -308,6 +309,7 @@ impl Backend {
         }
         let mut state = self.state.lock().unwrap();
         state.get_file(&uri).hovers = hovers;
+        state.get_file(&uri).content = String::from(content);
         drop(state);
 
         // symbols
@@ -365,6 +367,27 @@ impl Backend {
             }
         }
     }
+
+    fn complete(&self, _loc: Loc, name: &str) -> Vec<CompletionItem> {
+        let mut res = Vec::new();
+        for builtin in ["Print", "ReadInteger", "ReadLine"].iter() {
+            if builtin.starts_with(name) {
+                let insert_text = if *builtin == "Print" {
+                    format!("{}($1)", builtin)
+                } else {
+                    format!("{}()", builtin)
+                };
+                res.push(CompletionItem {
+                    label: String::from(*builtin),
+                    kind: Some(CompletionItemKind::Function),
+                    insert_text: Some(insert_text),
+                    insert_text_format: Some(InsertTextFormat::Snippet),
+                    ..CompletionItem::default()
+                });
+            }
+        }
+        res
+    }
 }
 
 impl LanguageServer for Backend {
@@ -389,6 +412,10 @@ impl LanguageServer for Backend {
                 hover_provider: Some(true),
                 folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
                 definition_provider: Some(true),
+                completion_provider: Some(CompletionOptions {
+                    resolve_provider: None,
+                    trigger_characters: Some(vec![String::from("R"), String::from("P")]),
+                }),
                 ..ServerCapabilities::default()
             },
         })
@@ -421,8 +448,22 @@ impl LanguageServer for Backend {
         Box::new(future::ok(None))
     }
 
-    fn completion(&self, _: CompletionParams) -> Self::CompletionFuture {
+    fn completion(&self, params: CompletionParams) -> Self::CompletionFuture {
         debug!("complete");
+        let position = params.text_document_position.position;
+        let mut state = self.state.lock().unwrap();
+        let file = state.get_file(&params.text_document_position.text_document.uri);
+        let lines: Vec<&str> = file.content.split("\n").collect();
+        if let Some(line) = lines.get(position.line as usize) {
+            let part = &line[..position.character as usize];
+            if let Some(name) = part.rmatches(char::is_alphabetic).next() {
+                debug!("{}", name);
+                let loc = Loc(position.line as u32 + 1, position.character as u32 + 1);
+                return Box::new(future::ok(Some(CompletionResponse::Array(
+                    self.complete(loc, name),
+                ))));
+            }
+        }
         Box::new(future::ok(None))
     }
 
