@@ -1,7 +1,6 @@
 use common::Loc;
 use decaf_lsp::*;
-use futures::future;
-use jsonrpc_core::{BoxFuture, Result};
+use jsonrpc_core::Result;
 use log::*;
 use serde_json::Value;
 use std::collections::hash_map::Entry;
@@ -331,12 +330,13 @@ impl Backend {
                                 source: None,
                                 message: format!("{:?}", err.1),
                                 related_information: None,
+                                tags: None,
                             });
                         }
                     }
                 }
 
-                printer.publish_diagnostics(uri.clone(), diag);
+                printer.publish_diagnostics(uri.clone(), diag, None);
 
                 // symbols, hovers and ranges
                 let mut file_state = FileState::default();
@@ -361,9 +361,10 @@ impl Backend {
                         source: None,
                         message: format!("{:?}", err.1),
                         related_information: None,
+                        tags: None,
                     });
                 }
-                printer.publish_diagnostics(uri, diag);
+                printer.publish_diagnostics(uri, diag, None);
             }
         }
     }
@@ -390,19 +391,11 @@ impl Backend {
     }
 }
 
+#[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    type ShutdownFuture = BoxFuture<()>;
-    type SymbolFuture = BoxFuture<Option<Vec<SymbolInformation>>>;
-    type ExecuteFuture = BoxFuture<Option<Value>>;
-    type CompletionFuture = BoxFuture<Option<CompletionResponse>>;
-    type HoverFuture = BoxFuture<Option<Hover>>;
-    type HighlightFuture = BoxFuture<Option<Vec<DocumentHighlight>>>;
-    type DocumentSymbolFuture = BoxFuture<Option<DocumentSymbolResponse>>;
-    type FoldingRangeFuture = BoxFuture<Option<Vec<FoldingRange>>>;
-    type GotoDefinitionFuture = BoxFuture<Option<GotoDefinitionResponse>>;
-
     fn initialize(&self, _: &Printer, _: InitializeParams) -> Result<InitializeResult> {
         Ok(InitializeResult {
+            server_info: None,
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::Full,
@@ -415,40 +408,45 @@ impl LanguageServer for Backend {
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: None,
                     trigger_characters: Some(vec![String::from("R"), String::from("P")]),
+                    work_done_progress_options: WorkDoneProgressOptions {
+                        work_done_progress: None,
+                    },
                 }),
                 ..ServerCapabilities::default()
             },
         })
     }
 
-    fn shutdown(&self) -> Self::ShutdownFuture {
+    async fn shutdown(&self) -> Result<()> {
         debug!("shutdown");
-        Box::new(future::ok(()))
+        Ok(())
     }
 
-    fn symbol(&self, _: WorkspaceSymbolParams) -> Self::SymbolFuture {
+    async fn symbol(&self, _: WorkspaceSymbolParams) -> Result<Option<Vec<SymbolInformation>>> {
         debug!("symbol");
         let state = self.state.lock().unwrap();
         let mut symbols = Vec::new();
         for (_, file) in state.files.iter() {
             symbols.append(&mut file.symbols.clone());
         }
-        Box::new(future::ok(Some(symbols.clone())))
+        Ok(Some(symbols))
     }
 
-    fn folding_range(&self, params: FoldingRangeParams) -> Self::FoldingRangeFuture {
+    /*
+    async fn folding_range(&self, params: FoldingRangeParams) -> Result<Option<FoldingRange>> {
         debug!("folding");
         let mut state = self.state.lock().unwrap();
         let file = state.get_file(&params.text_document.uri);
-        Box::new(future::ok(Some(file.ranges.clone())))
+        Ok(Some(file.ranges.clone()))
     }
+    */
 
-    fn execute_command(&self, _: &Printer, _: ExecuteCommandParams) -> Self::ExecuteFuture {
+    async fn execute_command(&self, _: &Printer, _: ExecuteCommandParams) -> Result<Option<Value>> {
         debug!("exec");
-        Box::new(future::ok(None))
+        Ok(None)
     }
 
-    fn completion(&self, params: CompletionParams) -> Self::CompletionFuture {
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         debug!("complete");
         let position = params.text_document_position.position;
         let mut state = self.state.lock().unwrap();
@@ -459,15 +457,13 @@ impl LanguageServer for Backend {
             if let Some(name) = part.rmatches(char::is_alphabetic).next() {
                 debug!("{}", name);
                 let loc = Loc(position.line as u32 + 1, position.character as u32 + 1);
-                return Box::new(future::ok(Some(CompletionResponse::Array(
-                    self.complete(loc, name),
-                ))));
+                return Ok(Some(CompletionResponse::Array(self.complete(loc, name))));
             }
         }
-        Box::new(future::ok(None))
+        Ok(None)
     }
 
-    fn hover(&self, params: TextDocumentPositionParams) -> Self::HoverFuture {
+    async fn hover(&self, params: TextDocumentPositionParams) -> Result<Option<Hover>> {
         debug!("hover");
         let mut state = self.state.lock().unwrap();
         let file = state.get_file(&params.text_document.uri);
@@ -485,24 +481,31 @@ impl LanguageServer for Backend {
                 });
             }
         }
-        Box::new(future::ok(result.map(|res| res.1)))
+        Ok(result.map(|res| res.1))
     }
 
-    fn document_highlight(&self, _: TextDocumentPositionParams) -> Self::HighlightFuture {
+    async fn document_highlight(
+        &self,
+        _: TextDocumentPositionParams,
+    ) -> Result<Option<Vec<DocumentHighlight>>> {
         debug!("highlight");
-        Box::new(future::ok(None))
+        Ok(None)
     }
 
-    fn document_symbol(&self, params: DocumentSymbolParams) -> Self::DocumentSymbolFuture {
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> Result<Option<DocumentSymbolResponse>> {
         debug!("documentSymbol");
         let mut state = self.state.lock().unwrap();
         let file = state.get_file(&params.text_document.uri);
-        Box::new(future::ok(Some(DocumentSymbolResponse::Flat(
-            file.symbols.clone(),
-        ))))
+        Ok(Some(DocumentSymbolResponse::Flat(file.symbols.clone())))
     }
 
-    fn definition(&self, params: TextDocumentPositionParams) -> Self::GotoDefinitionFuture {
+    async fn goto_definition(
+        &self,
+        params: TextDocumentPositionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
         debug!("definition");
         let mut state = self.state.lock().unwrap();
         let file = state.get_file(&params.text_document.uri);
@@ -520,16 +523,19 @@ impl LanguageServer for Backend {
                 });
             }
         }
-        Box::new(future::ok(result.map(|res| {
+        Ok(result.map(|res| {
             GotoDefinitionResponse::Scalar(Location {
                 uri: params.text_document.uri.clone(),
                 range: res.1,
             })
-        })))
+        }))
     }
 
-    fn declaration(&self, params: TextDocumentPositionParams) -> Self::GotoDefinitionFuture {
-        self.definition(params)
+    async fn goto_declaration(
+        &self,
+        params: TextDocumentPositionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        self.goto_definition(params).await
     }
 
     fn did_open(&self, printer: &Printer, params: DidOpenTextDocumentParams) {
@@ -554,21 +560,20 @@ impl LanguageServer for Backend {
         if let Some(state) = state.files.get_mut(&params.text_document.uri) {
             state.symbols.clear();
         }
-        printer.publish_diagnostics(params.text_document.uri, vec![]);
+        printer.publish_diagnostics(params.text_document.uri, vec![], None);
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     simple_logging::log_to_file(".decaf-lsp.log", LevelFilter::Debug).unwrap();
 
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
     let (service, messages) = LspService::new(Backend::default());
-    let handle = service.close_handle();
-    let server = Server::new(stdin, stdout)
+    Server::new(stdin, stdout)
         .interleave(messages)
-        .serve(service);
-
-    tokio::run(handle.run_until_exit(server));
+        .serve(service)
+        .await;
 }

@@ -7,12 +7,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-codespan = "0.5.0"
-codespan-lsp = "0.5.0"
-tower-lsp = { git = "https://github.com/jiegec/tower-lsp.git" }
+tower-lsp = "0.8"
 jsonrpc-core = "14.0"
-tokio = "0.1.22"
-futures = "0.1.29"
+tokio = { version = "0.2", features = ["io-std", "macros"]}
 serde_json = "1.0.41"
 simple-logging = "2.0.2"
 log = "0.4.8"
